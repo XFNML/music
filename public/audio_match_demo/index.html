@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/static/shell.css">
+  <title>听歌识曲 Demo</title>
+  <style>
+    body { padding: 1.25rem; }
+    .subtitle { font-size: 0.8125rem; color: var(--muted-foreground); margin-bottom: 1.5rem; }
+    .subtitle a { color: var(--info); }
+    hr { border: none; border-top: 1px solid var(--border); margin: 1.25rem 0; }
+    p { font-size: 0.875rem; color: var(--muted-foreground); line-height: 1.6; margin-bottom: 0.75rem; }
+    a { color: var(--info); }
+    .section { margin-bottom: 1.5rem; }
+    .section h3 {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    .control-group {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    input[type="file"] {
+      padding: 0.625rem 0.875rem;
+      border: 1px solid var(--input);
+      border-radius: var(--radius);
+      font-size: 0.875rem;
+      background: var(--gray-1);
+      color: var(--foreground);
+    }
+    canvas {
+      width: 100%;
+      height: 0;
+      transition: height linear 0.1s;
+      background: var(--gray-2);
+      border: 1px solid var(--border);
+    }
+    .canvas-active { height: 15vh; }
+    pre {
+      max-height: 25rem;
+      overflow-y: auto;
+    }
+    pre a { color: var(--info); }
+    .warning {
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--warning);
+      background: color-mix(in srgb, var(--warning) 8%, transparent);
+      font-size: 0.875rem;
+      color: var(--warning);
+      margin-bottom: 1rem;
+    }
+    .warning a { color: inherit; }
+    .warning strong { font-weight: 600; }
+    ul.steps { padding-left: 1.25rem; font-size: 0.875rem; color: var(--muted-foreground); }
+  </style>
+</head>
+
+<body>
+  <header class="shell-topbar">
+    <a class="brand" href="/"><img src="/docs/netease.png" alt="logo">听歌识曲</a>
+    <nav>
+      <a class="shell-btn shell-btn--ghost shell-btn--sm" href="/">返回首页</a>
+    </nav>
+  </header>
+
+  <main class="shell-main">
+    <div class="shell-container shell-narrow" style="max-width:50rem">
+      <header class="shell-header">
+        <h1>听歌识曲 Demo</h1>
+        <p class="subtitle">Credit: <a href="https://github.com/mos9527/ncm-afp" target="_blank">https://github.com/mos9527/ncm-afp</a></p>
+      </header>
+
+      <hr>
+
+      <div class="warning">
+        <strong>免责声明：</strong>本站点使用网易云音乐官方音频识别API（逆向自 <a href="https://fn.music.163.com/g/chrome-extension-home-page-beta/" target="_blank">Chrome 扩展页面</a>），不鼓励版权侵犯或知识产权盗窃。
+      </div>
+
+      <section class="shell-card">
+        <div class="section">
+          <h3>使用说明</h3>
+          <p>在使用本站点之前，您可能需要先访问以下链接：</p>
+          <p><a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank">https://cors-anywhere.herokuapp.com/corsdemo</a></p>
+          <p>由于网易云音乐API没有CORS头，这是解决此限制的必要步骤。</p>
+        </div>
+
+        <div class="section">
+          <h3>使用方法</h3>
+          <ul class="steps">
+            <li>通过"选择文件"选择您的音频文件</li>
+            <li>点击"识别"按钮并等待结果</li>
+          </ul>
+        </div>
+
+        <hr>
+
+        <audio id="audio" controls autoplay></audio>
+        <canvas id="canvas"></canvas>
+
+        <div class="control-group shell-mt-3">
+          <button id="invoke" class="shell-btn shell-btn--default">识别</button>
+          <input type="file" name="picker" accept="*" id="file">
+        </div>
+
+        <div class="control-group">
+          <div class="checkbox-group">
+            <input type="checkbox" name="use-mic" id="usemic">
+            <label for="usemic">混合麦克风输入</label>
+          </div>
+        </div>
+
+        <hr>
+
+        <h3 style="font-family:var(--font-mono);font-size:1rem;font-weight:600;margin-bottom:0.75rem">日志</h3>
+        <pre id="logs"></pre>
+      </section>
+    </div>
+  </main>
+</body>
+
+<script src="./afp.wasm.js"></script>
+<script src="./afp.js"></script>
+<script type="module">
+  const duration = 3
+
+  let audioCtx, recorderNode, micSourceNode
+  let audioBuffer, bufferHealth
+  let audio = document.getElementById('audio')
+  let file = document.getElementById('file')
+  let clip = document.getElementById('invoke')
+  let usemic = document.getElementById('usemic')
+  let canvas = document.getElementById('canvas')
+  let canvasCtx = canvas.getContext('2d')
+  let logs = document.getElementById('logs')
+  logs.write = line => {
+    // Append log lines as text to avoid interpreting content as HTML
+    logs.appendChild(document.createTextNode(line));
+    logs.appendChild(document.createElement('br'));
+  }
+
+  function RecorderCallback(channelL) {
+    let sampleBuffer = new Float32Array(channelL.subarray(0, duration * 8000))
+    GenerateFP(sampleBuffer).then(FP => {
+      logs.write(`[index] 生成指纹 ${FP}`)
+      logs.write('[index] 正在查询，请稍候...')
+      fetch(
+        '/audio/match?' +
+        new URLSearchParams({
+          duration: duration, audioFP: FP
+        }), {
+        method: 'POST'
+      }).then(resp => resp.json()).then(resp => {
+        if (!resp.data.result) {
+          return logs.write('[index] 查询失败，无结果')
+        }
+        logs.write(`[index] 查询完成。结果数量=${resp.data.result.length}`)
+        for (var song of resp.data.result) {
+          var a = document.createElement('a');
+          a.href = 'https://music.163.com/song?id=' + encodeURIComponent(song.song.id);
+          a.target = '_blank';
+          a.textContent = song.song.name + ' - ' + song.song.album.name + ' (' + (song.startTime / 1000) + 's)';
+          logs.appendChild(document.createTextNode('[result] '));
+          logs.appendChild(a);
+          logs.appendChild(document.createElement('br'));
+        }
+      })
+    })
+  }
+
+  function InitAudioCtx() {
+    audioCtx = new AudioContext({ 'sampleRate': 8000 })
+    if (audioCtx.state == 'suspended')
+      return false
+    let audioNode = audioCtx.createMediaElementSource(audio)
+    audioCtx.audioWorklet.addModule('rec.js').then(() => {
+      recorderNode = new AudioWorkletNode(audioCtx, 'timed-recorder')
+      audioNode.connect(recorderNode)
+      audioNode.connect(audioCtx.destination)
+      recorderNode.port.onmessage = event => {
+        switch (event.data.message) {
+          case 'finished':
+            RecorderCallback(event.data.recording)
+            clip.innerHTML = '识别'
+            clip.disabled = false
+            canvas.classList.remove('canvas-active')
+            break
+          case 'bufferhealth':
+            clip.innerHTML = `${(duration * (1 - event.data.health)).toFixed(2)}s`
+            bufferHealth = event.data.health
+            audioBuffer = event.data.recording
+            break
+          default:
+            logs.write(event.data.message)
+        }
+      }
+      navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          autoGainControl: false,
+          noiseSuppression: false,
+          latency: 0,
+        },
+      }).then(micStream => {
+        micSourceNode = audioCtx.createMediaStreamSource(micStream);
+        micSourceNode.connect(recorderNode)
+        usemic.checked = true
+        logs.write('[rec.js] 麦克风已连接')
+      });
+    });
+    return true
+  }
+
+  clip.addEventListener('click', event => {
+    recorderNode.port.postMessage({
+      message: 'start', duration: duration
+    })
+    clip.disabled = true
+    canvas.classList.add('canvas-active')
+  })
+  usemic.addEventListener('change', event => {
+    if (!usemic.checked)
+      micSourceNode.disconnect(recorderNode)
+    else
+      micSourceNode.connect(recorderNode)
+  })
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/\//g, '&#x2F;');
+  }
+  file.addEventListener('change', event => {
+    file.files[0].arrayBuffer().then(
+      async buffer => {
+        const safeName = escapeHtml(file.files[0].name)
+        logs.write(`[index] 文件 ${safeName} 已加载`)
+        audio.src = window.URL.createObjectURL(new Blob([buffer]))
+        clip.disabled = false
+      })
+  })
+
+  function UpdateCanvas() {
+    let w = canvas.clientWidth, h = canvas.clientHeight
+    canvas.width = w, canvas.height = h
+    canvasCtx.fillStyle = 'rgba(0,0,0,0)';
+    canvasCtx.fillRect(0, 0, w, h);
+    if (audioBuffer) {
+      canvasCtx.fillStyle = '#e4e4e4'; /* 深色主题下用前景色绘制波形 */
+      for (var x = 0; x < w * bufferHealth; x++) {
+        var y = audioBuffer[Math.ceil((x / w) * audioBuffer.length)]
+        var z = Math.abs(y) * h / 2
+        canvasCtx.fillRect(x, h / 2 - (y > 0 ? z : 0), 1, z)
+      }
+    }
+    requestAnimationFrame(UpdateCanvas)
+  }
+  UpdateCanvas()
+  let requestCtx = setInterval(() => {
+    try {
+      if (InitAudioCtx()) {
+        clearInterval(requestCtx)
+        logs.write('[rec.js] 音频上下文已启动')
+      }
+    } catch {
+      // Fail silently
+    }
+  }, 100)
+</script>
+</html>

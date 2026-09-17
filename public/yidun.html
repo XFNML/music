@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <link rel="icon" href="docs/netease.png">
+  <link rel="stylesheet" href="/static/shell.css">
+  <title>Token 注册器 — 网易云音乐 API Enhanced</title>
+  <style>
+    body { padding: 1.25rem; }
+    .flex { display: flex; align-items: center; gap: 0.625rem; }
+    .flex.sb { justify-content: space-between; }
+    .token-display {
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      color: var(--success);
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <header class="shell-topbar">
+    <a class="brand" href="/"><img src="docs/netease.png" alt="logo">Token 注册器</a>
+    <nav>
+      <a class="shell-btn shell-btn--ghost shell-btn--sm" href="/">返回首页</a>
+    </nav>
+  </header>
+
+  <main class="shell-main">
+    <div class="shell-container shell-narrow" style="max-width:45rem">
+      <header class="shell-header">
+        <h1>🔑 Token 注册器</h1>
+        <p class="sub">从易盾获取反作弊 token 并注册到服务器，供广告等需要 checkToken 的接口使用</p>
+      </header>
+
+      <section class="shell-card">
+        <div class="flex sb" style="margin-bottom:0.625rem">
+          <h3>当前 Token</h3>
+          <span id="statusTag" class="tag no">未注册</span>
+        </div>
+        <pre id="tokenDisplay">（空）</pre>
+        <div class="shell-flex shell-mt-3">
+          <button id="btnGet" class="shell-btn shell-btn--default">获取 Token</button>
+          <button id="btnRefresh" class="shell-btn shell-btn--outline">强制刷新</button>
+        </div>
+      </section>
+
+      <section class="shell-card shell-mt-6">
+        <h3>服务器响应</h3>
+        <pre id="respDisplay">{}</pre>
+      </section>
+
+      <footer class="shell-footer">
+        <a href="/">← 返回首页</a>
+      </footer>
+    </div>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id)
+    const base = location.origin
+
+    async function call(refresh) {
+      const btn = $('btnGet')
+      const btnR = $('btnRefresh')
+      btn.disabled = btnR.disabled = true
+
+      const tag = $('statusTag')
+      tag.className = 'tag busy'
+      tag.textContent = '获取中…'
+
+      try {
+        const url = base + '/register/checktoken/v2' + (refresh ? '?refresh=1' : '')
+        const res = await fetch(url)
+        const data = await res.json()
+        $('respDisplay').textContent = JSON.stringify(data, null, 2)
+
+        if (data.token) {
+          $('tokenDisplay').textContent = data.token
+          tag.className = 'tag ok'
+          tag.textContent = '已注册'
+        } else {
+          $('tokenDisplay').textContent = '（获取失败）'
+          tag.className = 'tag no'
+          tag.textContent = '失败'
+        }
+      } catch (e) {
+        $('respDisplay').textContent = JSON.stringify({ error: e.message }, null, 2)
+        tag.className = 'tag no'
+        tag.textContent = e.message
+      }
+
+      btn.disabled = btnR.disabled = false
+    }
+
+    $('btnGet').onclick = () => call(false)
+    $('btnRefresh').onclick = () => call(true)
+    call(false)
+  </script>
+</body>
+</html>

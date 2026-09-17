@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="docs/netease.png" />
+  <link rel="stylesheet" href="/static/shell.css" />
+  <title>歌单封面上传</title>
+  <style>
+    body { padding: 1.25rem; display: flex; align-items: flex-start; justify-content: center; }
+    .shell-header { text-align: center; }
+    .cover-wrapper {
+      position: relative;
+      width: 180px;
+      height: 180px;
+      margin: 0 auto 1.5rem;
+    }
+    .cover {
+      width: 100%;
+      height: 100%;
+      border-radius: 2px;
+      object-fit: cover;
+      border: 1px solid var(--border);
+      background: var(--gray-4);
+    }
+    .loading {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: color-mix(in srgb, var(--background) 85%, transparent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+    }
+    .loading.active { opacity: 1; }
+    .spinner {
+      width: 3rem;
+      height: 3rem;
+      border: 4px solid var(--gray-4);
+      border-top-color: var(--foreground);
+      border-radius: 9999px;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .upload-btn {
+      display: inline-block;
+      padding: 0.75rem 1.75rem;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      font-family: var(--font-mono);
+      font-size: 0.9375rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity var(--transition);
+      border: none;
+    }
+    .upload-btn:hover { opacity: 0.85; }
+    .upload-btn input[type="file"] { display: none; }
+  </style>
+</head>
+
+<body>
+  <div class="shell-card shell-container shell-narrow" style="text-align:center;padding:2.5rem">
+    <header class="shell-header">
+      <h1>歌单封面上传</h1>
+      <p class="sub">上传自定义歌单封面图片</p>
+    </header>
+
+    <div class="shell-flex shell-flex--center shell-mb-4">
+      <a class="shell-btn shell-btn--ghost shell-btn--sm" href="/qrlogin-nocookie.html">还没登录？点击登录</a>
+    </div>
+
+    <div class="form-group" style="text-align:left">
+      <label for="playlistId">歌单 ID</label>
+      <input type="text" id="playlistId" placeholder="请输入歌单ID" />
+    </div>
+
+    <div class="cover-wrapper">
+      <img id="playlist_cover" class="cover" src="" alt="歌单封面" />
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+      </div>
+    </div>
+
+    <div class="shell-flex shell-flex--center">
+      <label class="upload-btn">
+        选择封面图片
+        <input id="file" type="file" name="filename" accept="image/*" />
+      </label>
+    </div>
+
+    <div id="result" class="result" style="display: none;"></div>
+
+    <div class="shell-flex shell-flex--center shell-mt-4">
+      <a class="shell-btn shell-btn--outline shell-btn--sm" href="/">返回首页</a>
+    </div>
+  </div>
+
+  <script src="https://fastly.jsdelivr.net/npm/axios@0.26.1/dist/axios.min.js"></script>
+  <script>
+    const loadingOverlay = document.getElementById('loading')
+    const playlistIdInput = document.getElementById('playlistId')
+    const resultDiv = document.getElementById('result')
+
+    function showLoading() {
+      loadingOverlay.classList.add('active')
+    }
+
+    function hideLoading() {
+      loadingOverlay.classList.remove('active')
+    }
+
+    function showResult(message, type) {
+      resultDiv.textContent = message
+      resultDiv.className = 'result ' + type
+      resultDiv.style.display = 'block'
+    }
+
+    function hideResult() {
+      resultDiv.style.display = 'none'
+    }
+
+    async function loadPlaylistCover() {
+      const playlistId = playlistIdInput.value.trim()
+      if (!playlistId) {
+        return
+      }
+
+      showLoading()
+      hideResult()
+
+      try {
+        const res = await axios({
+          url: `/playlist/detail?id=${playlistId}&timestamp=${Date.now()}`,
+        })
+        document.querySelector('#playlist_cover').src = res.data.playlist.coverImgUrl
+        hideResult()
+      } catch (error) {
+        console.error('加载封面失败:', error)
+        showResult('加载封面失败，请检查歌单ID', 'error')
+      } finally {
+        hideLoading()
+      }
+    }
+
+    // 监听歌单ID输入变化
+    playlistIdInput.addEventListener('input', function() {
+      loadPlaylistCover()
+    })
+
+    // 监听文件选择
+    document
+      .querySelector('input[type="file"]')
+      .addEventListener('change', async function (e) {
+        const file = this.files[0]
+        const playlistId = playlistIdInput.value.trim()
+
+        if (!playlistId) {
+          showResult('请先输入歌单ID', 'error')
+          return
+        }
+
+        if (!file) {
+          return
+        }
+
+        showLoading()
+        hideResult()
+
+        try {
+          await upload(file, playlistId)
+        } catch (error) {
+          console.error('上传失败:', error)
+          showResult('上传失败，请重试', 'error')
+        } finally {
+          hideLoading()
+        }
+      })
+
+    async function upload(file, playlistId) {
+      var formData = new FormData()
+      formData.append('imgFile', file)
+      const imgSize = await getImgSize(file)
+      const res = await axios({
+        method: 'post',
+        url: `/playlist/cover/update?id=${playlistId}&cookie=${localStorage.getItem('cookie')}&imgSize=${imgSize.width}&imgX=0&imgY=0&timestamp=${Date.now()}`,
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        data: formData,
+      })
+      document.querySelector('#playlist_cover').src = res.data.data.url
+      showResult('封面上传成功！', 'success')
+    }
+
+    function getImgSize(file) {
+      return new Promise((resolve, reject) => {
+        let reader = new FileReader()
+        reader.readAsDataURL(file)
+        reader.onload = function (theFile) {
+          let image = new Image()
+          image.src = theFile.target.result
+          image.onload = function () {
+            resolve({
+              width: this.width,
+              height: this.height,
+            })
+          }
+          image.onerror = function() {
+            reject(new Error('图片加载失败'))
+          }
+        }
+        reader.onerror = function() {
+          reject(new Error('文件读取失败'))
+        }
+      })
+    }
+  </script>
+</body>
+
+</html>

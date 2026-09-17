@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="docs/netease.png" />
+    <link rel="stylesheet" href="/static/shell.css" />
+    <title>一起听 - 主机模式</title>
+    <script src="https://unpkg.com/petite-vue"></script>
+    <script src="https://fastly.jsdelivr.net/npm/axios@0.26.1/dist/axios.min.js"></script>
+    <style>
+      body { padding: 1.25rem; }
+      .message {
+        padding: 0.75rem 1rem;
+        background: var(--gray-2);
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--info);
+        margin-bottom: 1.25rem;
+        font-size: 0.875rem;
+        color: var(--foreground);
+        font-family: var(--font-mono);
+      }
+      .audio-player { width: 100%; margin-bottom: 1.25rem; }
+      .section {
+        margin-bottom: 1.5rem;
+        padding: 1.25rem;
+        background: var(--gray-2);
+        border: 1px solid var(--border);
+      }
+      .section h3 {
+        font-family: var(--font-mono);
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+      }
+      .section h4 {
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+        font-weight: 600;
+        margin: 1rem 0 0.5rem;
+      }
+      .input-group {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+      }
+      .input-group label {
+        font-size: 0.875rem;
+        color: var(--muted-foreground);
+        min-width: 5rem;
+        margin: 0;
+      }
+      .share-link {
+        padding: 0.75rem;
+        background: var(--gray-1);
+        border: 1px solid var(--border);
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        color: var(--muted-foreground);
+        word-break: break-all;
+        margin-bottom: 0.75rem;
+      }
+      .user-list {
+        list-style: none;
+        max-height: 12.5rem;
+        overflow-y: auto;
+      }
+      .user-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.625rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .user-item:last-child { border-bottom: none; }
+      .user-avatar {
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 9999px;
+        object-fit: cover;
+        background: var(--gray-4);
+      }
+      .user-name {
+        font-size: 0.875rem;
+        color: var(--foreground);
+      }
+      .track-list {
+        list-style: none;
+        max-height: 18.75rem;
+        overflow-y: auto;
+      }
+      .track-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.625rem;
+        border-bottom: 1px solid var(--border);
+        cursor: pointer;
+        transition: background var(--transition);
+      }
+      .track-item:hover { background: var(--gray-4); }
+      .track-item:last-child { border-bottom: none; }
+      .track-cover {
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 2px;
+        object-fit: cover;
+        background: var(--gray-4);
+      }
+      .track-name {
+        font-size: 0.875rem;
+        color: var(--foreground);
+      }
+      details { cursor: pointer; }
+      details summary {
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--muted-foreground);
+        padding: 0.5rem 0;
+        list-style: none;
+      }
+      details summary::before { content: '▸ '; }
+      details[open] summary::before { content: '▾ '; }
+      details summary:hover { color: var(--foreground); }
+      details[open] summary { margin-bottom: 0.75rem; }
+      .control-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      .account-info {
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+        color: var(--foreground);
+      }
+    </style>
+  </head>
+
+  <body>
+    <header class="shell-topbar">
+      <a class="brand" href="/"><img src="docs/netease.png" alt="logo">一起听 · 主机模式</a>
+      <nav>
+        <a class="shell-btn shell-btn--ghost shell-btn--sm" href="/qrlogin.html">登录</a>
+        <a class="shell-btn shell-btn--ghost shell-btn--sm" href="/">返回首页</a>
+      </nav>
+    </header>
+
+    <main class="shell-main">
+      <div class="shell-container shell-narrow" style="max-width:56rem">
+        <header class="shell-header">
+          <h1>一起听 - 主机模式</h1>
+          <p class="sub">创建房间并同步播放，与好友一起听歌</p>
+        </header>
+
+        <div class="message">消息: {{message}}</div>
+
+        <audio id="player" class="audio-player" autoplay controls></audio>
+
+        <div v-if="!account.login">
+          <button class="shell-btn shell-btn--default" @click="login">获取登录状态</button>
+        </div>
+
+        <section class="section">
+          <h3>账号信息</h3>
+          <div class="account-info">当前登录账号: {{account.nickname}}</div>
+        </section>
+
+        <section class="section" v-if="account.login">
+          <h3>房间管理</h3>
+          <div class="control-buttons">
+            <button v-if="!roomInfo.roomId" class="shell-btn shell-btn--default" @click="createRoom">创建房间</button>
+          </div>
+
+          <details>
+            <summary>加入房间</summary>
+            <div class="input-group">
+              <label>房间ID:</label>
+              <input v-model="roomInfo.roomId" type="text" />
+            </div>
+            <div class="input-group">
+              <label>邀请者ID:</label>
+              <input v-model="roomInfo.inviterId" type="text" />
+            </div>
+            <button class="shell-btn shell-btn--outline" @click="joinRoom">加入房间</button>
+          </details>
+
+          <div v-if="roomInfo.roomId" style="margin-top:1rem">
+            <h4>分享链接</h4>
+            <div class="share-link">
+              https://st.music.163.com/listen-together/share/?songId=1372188635&roomId={{roomInfo.roomId}}&inviterId={{roomInfo.inviterId}}
+            </div>
+            <div class="control-buttons">
+              <button class="shell-btn shell-btn--outline" @click="refreshRoom">刷新房间状态</button>
+              <button class="shell-btn shell-btn--danger" @click="closeRoom">关闭房间</button>
+            </div>
+
+            <h4>在线用户</h4>
+            <ul class="user-list">
+              <li v-for="user in roomInfo.roomUsers" :key="user.userId" class="user-item">
+                <img :src="user.avatarUrl" class="user-avatar" alt="avatar" />
+                <span class="user-name">{{user.nickname}}</span>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="section">
+          <h3>播放控制</h3>
+          <div class="control-buttons">
+            <button class="shell-btn shell-btn--outline" @click="playTrack">播放</button>
+            <button class="shell-btn shell-btn--outline" @click="pauseTrack">暂停</button>
+            <button class="shell-btn shell-btn--outline" @click="seekTrack">同步进度</button>
+          </div>
+        </section>
+
+        <details>
+          <summary>播放列表</summary>
+          <section class="section">
+            <div class="input-group">
+              <label>歌单ID:</label>
+              <input v-model="playlistInfo.playlistId" type="text" />
+            </div>
+            <button class="shell-btn shell-btn--outline" @click="loadPlaylist">加载歌单</button>
+            <div style="margin-top:0.75rem; font-size:0.875rem; color:var(--muted-foreground)">
+              歌单名称: {{playlistInfo.playlistName}}
+            </div>
+
+            <h4>歌单内容</h4>
+            <ul class="track-list">
+              <li
+                @click="gotoTrack(track.id)"
+                v-for="track in playlistInfo.playlistTracks"
+                :key="track.id"
+                class="track-item"
+              >
+                <img :src="track.al.picUrl" class="track-cover" alt="cover" />
+                <span class="track-name">{{track.name}}</span>
+              </li>
+            </ul>
+          </section>
+        </details>
+      </div>
+    </main>
+  </body>
+
+  <script>
+    PetiteVue.createApp({
+      message: '请点击获取登录状态',
+      account: {
+        login: false,
+        userId: 0,
+        nickname: '未登录',
+      },
+      roomInfo: {
+        roomId: null,
+        inviterId: 0,
+        roomUsers: [],
+      },
+      playlistInfo: {
+        playlistId: 0,
+        playlistName: '未获取',
+        playlistTrackIds: [],
+        playlistTracks: [],
+      },
+      playingInfo: {
+        trackId: 0,
+        status: 'PLAY',
+        progress: 1,
+      },
+      clientSeq: 1,
+      login: async function () {
+        const res = await axios({
+          url: `/login/status?timestamp=${new Date().getTime()}`,
+          method: 'get',
+          data: {
+            cookie: localStorage.getItem('cookie'),
+          },
+        })
+        if (res.data.data.code != 200) {
+          alert('请先使用登录 API 登录到网易云音乐')
+        } else {
+          this.account.userId = res.data.data.profile.userId
+          this.account.nickname = res.data.data.profile.nickname
+          this.account.login = true
+          this.message = '成功登录，请创建房间'
+        }
+      },
+      joinRoom: async function () {
+        const res = await axios({
+          url: 'listentogether/accept',
+          method: 'post',
+          data: {
+            roomId: this.roomInfo.roomId,
+            inviterId: this.roomInfo.inviterId,
+            cookie: localStorage.getItem('cookie'),
+          },
+        })
+        console.info(res)
+        if (res.data.code != 200) {
+          this.message = '加入房间出现问题: ' + res.data.message
+        } else {
+          this.message = '加入房间成功: ' + this.roomInfo.roomId
+          const res2 = await axios({
+            url: 'listentogether/room/check',
+            method: 'post',
+            data: {
+              roomId: this.roomInfo.roomId,
+              cookie: localStorage.getItem('cookie'),
+            },
+          })
+          console.info(res2)
+          const res3 = await axios({
+            url: 'listentogether/sync/playlist/get',
+            method: 'post',
+            data: {
+              roomId: this.roomInfo.roomId,
+              cookie: localStorage.getItem('cookie'),
+            },
+          })
+
+          this.playlistInfo.playlistName = '其他人的歌单'
+          this.playlistInfo.playlistTrackIds =
+            res3.data.data.playlist.displayList.result.join(',')
+          const resa = await axios({
+            url: '/song/detail',
+            method: 'post',
+            data: {
+              ids: this.playlistInfo.playlistTrackIds,
+              cookie: localStorage.getItem('cookie'),
+            },
+          })
+          console.info(resa)
+          this.playlistInfo.playlistTracks = resa.data.songs
+        }
+      },
+      createRoom: async function () {
+        const res = await axios({
+          url: 'listentogether/room/create',
+          method: 'get',
+          data: {
+            cookie: localStorage.getItem('cookie'),
+          },
+        })
+        console.info(res)
+        if (res.data.code != 200) {
+          this.message = '创建房间出现问题: ' + res.data.message
+        } else {
+          this.message = '创建房间成功: ' + res.data.data.roomInfo.roomId
+          this.roomInfo.inviterId = this.account.userId
+          this.roomInfo.roomId = res.data.data.roomInfo.roomId
+          const res2 = await axios({
+            url: 'listentogether/room/check',
+            method: 'post',
+            data: {
+              roomId: this.roomInfo.roomId,
+              cookie: localStorage.getItem('cookie'),
+            },
+          })
+          console.info(res2)
+        }
+      },
+      refreshRoom: async function () {
+        const res = await axios({
+          url: '/listentogether/status',
+          data: {
+            cookie: localStorage.getItem('cookie'),
+          },
+        })
+        console.info(res)
+        if (res.data.code != 200 || !res.data.data.inRoom) {
+          this.message = '房间状态获取失败，可能退出了房间'
+        } else {
+          this.roomInfo.roomUsers = res.data.data.roomInfo.roomUsers
+        }
+      },
+      closeRoom: async function () {
+        const res = await axios({
+          url: '/listentogether/end',
+          method: 'post',
+          data: {
+            roomId: this.roomInfo.roomId,
+            cookie: localStorage.getItem('cookie'),
+          },
+        })
+        console.info(res)
+        if (res.data.code != 200 || !res.data.data.success) {
+          this.message = '房间关闭失败'
+        } else {
+          this.message = '房间关闭成功'
+          this.roomInfo.roomId = null
+        }
+      },
+      loadPlaylist: async function () {
+        const res = await axios({
+          url: '/playlist/detail',
+          method: 'post',
+          data: {
+            id: this.playlistInfo.playlistId,
+            cookie: localStorage.getItem('cookie'),
+          },
+        })
+        console.info(res)
+        this.playlistInfo.playlistName = res.data.playlist.name
+        this.playlistInfo.playlistTrackIds = res.data.playlist.trackIds
+          .map((track) => track.id)
+          .join(',')
+        const resa = await axios({
+          url: '/song/detail',
+          method: 'post',
+          data: {
+            ids: this.playlistInfo.playlistTrackIds,
+            cookie: localStorage.getItem('cookie'),
+          },
+        })
+        console.info(resa)
+        this.playlistInfo.playlistTracks = resa.data.songs
+        if (this.roomInfo.roomId) {
+          const resb = await axios({
+            url: 'listentogether/sync/list/command',
+            method: 'post',
+            data: {
+              roomId: this.roomInfo.roomId,
+              commandType: 'REPLACE',
+              userId: this.account.userId,
+              version: this.clientSeq++,
+              playMode: 'ORDER_LOOP',
+              displayList: this.playlistInfo.playlistTrackIds,
+              randomList: this.playlistInfo.playlistTrackIds,
+              cookie: localStorage.getItem('cookie'),
+            },
+          })
+          console.info(resb)
+        }
+      },
+      gotoTrack: async function (trackId) {
+        this.playingInfo.trackId = trackId
+        if (this.roomInfo.roomId) {
+          await this.playCommand('GOTO')
+        }
+        document.getElementById('player').src =
+          'https://music.163.com/song/media/outer/url?id=' + trackId + '.mp3'
+      },
+      playTrack: async function () {
+        this.playingInfo.status = 'PLAY'
+        await this.playCommand('PLAY')
+        document.getElementById('player').play()
+      },
+      pauseTrack: async function () {
+        this.playingInfo.status = 'PAUSE'
+        await this.playCommand('PAUSE')
+        document.getElementById('player').pause()
+      },
+      seekTrack: async function () {
+        this.playingInfo.status = 'PLAY'
+        await this.playCommand('seek')
+        document.getElementById('player').play()
+      },
+      playCommand: async function (action) {
+        const res = await axios({
+          url: 'listentogether/play/command',
+          method: 'post',
+          data: {
+            roomId: this.roomInfo.roomId,
+            progress: Math.floor(
+              document.getElementById('player').currentTime * 1000,
+            ),
+            commandType: action,
+            formerSongId: '-1',
+            targetSongId: this.playingInfo.trackId,
+            clientSeq: this.clientSeq++,
+            playStatus: this.playingInfo.status,
+            cookie: localStorage.getItem('cookie'),
+          },
+        })
+        console.info(res)
+      },
+    }).mount()
+  </script>
+</html>

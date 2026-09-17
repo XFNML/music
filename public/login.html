@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="docs/netease.png" />
+  <link rel="stylesheet" href="/static/shell.css" />
+  <title>登录</title>
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+    }
+    .shell-header { text-align: center; }
+  </style>
+</head>
+
+<body>
+  <div class="shell-card shell-container shell-narrow" style="text-align:center;padding:2.5rem">
+    <header class="shell-header">
+      <h1>登录</h1>
+      <p class="sub">使用手机号和密码登录网易云音乐</p>
+    </header>
+
+    <div class="form-group" style="text-align:left">
+      <label for="phone">手机号</label>
+      <input type="tel" id="phone" placeholder="请输入手机号" />
+    </div>
+
+    <div class="form-group" style="text-align:left">
+      <label for="password">密码</label>
+      <input type="password" id="password" placeholder="请输入密码" />
+    </div>
+
+    <button id="loginBtn" class="shell-btn shell-btn--default shell-btn--block" onclick="handleLogin()">登录</button>
+
+    <div id="result" class="result" style="display: none;"></div>
+
+    <div class="shell-flex shell-flex--center shell-mt-4">
+      <a class="shell-btn shell-btn--outline shell-btn--sm" href="/qrlogin.html">改用二维码登录</a>
+      <a class="shell-btn shell-btn--ghost shell-btn--sm" href="/">返回首页</a>
+    </div>
+  </div>
+
+  <script src="https://fastly.jsdelivr.net/npm/axios@0.26.1/dist/axios.min.js"></script>
+  <script>
+    const fileUpdateTime = {}
+
+    async function login(phone, password) {
+      const res = await axios({
+        url: `/login/cellphone`,
+        method: 'post',
+        data: {
+          phone: phone,
+          password: password,
+        },
+      })
+      return res.data.cookie
+    }
+
+    async function handleLogin() {
+      const phoneInput = document.getElementById('phone')
+      const passwordInput = document.getElementById('password')
+      const loginBtn = document.getElementById('loginBtn')
+      const resultDiv = document.getElementById('result')
+
+      const phone = phoneInput.value.trim()
+      const password = passwordInput.value
+
+      if (!phone || !password) {
+        showResult('请输入手机号和密码', 'error')
+        return
+      }
+
+      loginBtn.disabled = true
+      loginBtn.textContent = '登录中...'
+      showResult('正在登录...', 'info')
+
+      try {
+        const cookieToken = await login(phone, password)
+        localStorage.setItem('cookie', cookieToken)
+
+        const res = await axios({
+          url: `/login/status`,
+          method: 'post',
+          data: {
+            cookie: cookieToken,
+          },
+        })
+
+        showResult(`登录成功！\n${JSON.stringify(res.data, null, 2)}`, 'success')
+      } catch (error) {
+        console.error('登录失败:', error)
+        const errorMsg = error.response?.data?.message || error.message || '登录失败，请重试'
+        showResult(`登录失败：${errorMsg}`, 'error')
+      } finally {
+        loginBtn.disabled = false
+        loginBtn.textContent = '登录'
+      }
+    }
+
+    function showResult(message, type = 'info') {
+      const resultDiv = document.getElementById('result')
+      resultDiv.style.display = 'block'
+      resultDiv.textContent = message
+      resultDiv.className = 'result ' + type
+    }
+
+    // 支持回车登录
+    document.getElementById('password').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        handleLogin()
+      }
+    })
+
+    document.getElementById('phone').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        document.getElementById('password').focus()
+      }
+    })
+  </script>
+</body>
+
+</html>

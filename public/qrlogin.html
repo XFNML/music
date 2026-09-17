@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="docs/netease.png" />
+  <link rel="stylesheet" href="/static/shell.css" />
+  <title>二维码登录</title>
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+    }
+    .qr-wrapper {
+      display: inline-block;
+      padding: 1rem;
+      background: var(--gray-2);
+      border: 1px solid var(--border);
+      margin-bottom: 1.5rem;
+    }
+    #qrImg {
+      width: 200px;
+      height: 200px;
+      display: block;
+    }
+    .info {
+      text-align: left;
+      padding: 1rem;
+      background: var(--gray-2);
+      border: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--muted-foreground);
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 12.5rem;
+      overflow-y: auto;
+    }
+    .status {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+    .status.waiting { border-color: var(--warning); color: var(--warning); background: color-mix(in srgb, var(--warning) 8%, transparent); }
+    .status.success { border-color: var(--success); color: var(--success); background: color-mix(in srgb, var(--success) 8%, transparent); }
+    .status.error { border-color: var(--destructive); color: var(--destructive); background: color-mix(in srgb, var(--destructive) 8%, transparent); }
+    .hint {
+      margin-top: 1rem;
+      font-size: 0.8125rem;
+      color: var(--muted-foreground);
+    }
+    .shell-header { text-align: center; }
+  </style>
+</head>
+
+<body>
+  <div class="shell-card shell-container shell-narrow" style="text-align:center;padding:3rem">
+    <header class="shell-header">
+      <h1>二维码登录</h1>
+      <p class="sub">使用网易云音乐App扫描二维码登录</p>
+    </header>
+
+    <div class="qr-wrapper">
+      <img id="qrImg" src="" alt="二维码加载中..." />
+    </div>
+
+    <div id="status" class="status waiting">等待扫描...</div>
+
+    <div id="info" class="info shell-mt-3"></div>
+
+    <p class="hint">请打开网易云音乐App，扫描上方二维码完成登录</p>
+
+    <div class="shell-flex shell-flex--center shell-mt-4">
+      <a class="shell-btn shell-btn--outline shell-btn--sm" href="/">返回首页</a>
+    </div>
+  </div>
+
+  <script src="https://fastly.jsdelivr.net/npm/axios@0.26.1/dist/axios.min.js"></script>
+  <script>
+    async function login() {
+      let timer
+      const statusDiv = document.getElementById('status')
+      const cookie = localStorage.getItem('cookie')
+
+      updateStatus('加载二维码...', 'waiting')
+      getLoginStatus(cookie)
+
+      try {
+        const res = await axios({
+          url: `/login/qr/key?timestamp=${Date.now()}`,
+        })
+        const key = res.data.data.unikey
+
+        const res2 = await axios({
+          url: `/login/qr/create?key=${key}&platform=web&qrimg=true&timestamp=${Date.now()}&ua=pc`,
+        })
+        document.querySelector('#qrImg').src = res2.data.data.qrimg
+        updateStatus('请扫描二维码', 'waiting')
+
+        timer = setInterval(async () => {
+          const statusRes = await checkStatus(key)
+          if (statusRes.code === 800) {
+            updateStatus('二维码已过期，请刷新页面', 'error')
+            clearInterval(timer)
+          } else if (statusRes.code === 801) {
+            updateStatus('等待手机扫码...', 'waiting')
+          } else if (statusRes.code === 802) {
+            updateStatus('二维码已扫描，请在手机上确认', 'waiting')
+          } else if (statusRes.code === 803) {
+            clearInterval(timer)
+            updateStatus('授权登录成功，正在保存信息...', 'success')
+            await getLoginStatus(statusRes.cookie)
+            localStorage.setItem('cookie', statusRes.cookie)
+          }
+        }, 3000)
+      } catch (error) {
+        console.error('登录失败:', error)
+        updateStatus('二维码加载失败，请刷新页面重试', 'error')
+      }
+    }
+
+    async function checkStatus(key) {
+      const res = await axios({
+        url: `/login/qr/check?key=${key}&timestamp=${Date.now()}&ua=pc`,
+      })
+      return res.data
+    }
+
+    async function getLoginStatus(cookie = '') {
+      try {
+        const res = await axios({
+          url: `/login/status?timestamp=${Date.now()}&ua=pc`,
+          method: 'post',
+          data: {
+            cookie,
+          },
+        })
+        document.querySelector('#info').textContent = JSON.stringify(res.data, null, 2)
+      } catch (error) {
+        console.error('获取登录状态失败:', error)
+      }
+    }
+
+    function updateStatus(message, type) {
+      const statusDiv = document.getElementById('status')
+      statusDiv.textContent = message
+      statusDiv.className = 'status ' + type
+    }
+
+    login()
+  </script>
+</body>
+
+</html>

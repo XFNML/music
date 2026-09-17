@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="docs/netease.png" />
+    <link rel="stylesheet" href="/static/shell.css" />
+    <title>播客上传声音</title>
+    <style>
+      body { padding: 1.25rem; }
+      .content {
+        display: flex;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+      }
+      .voice-list { flex: 1; min-width: 300px; }
+      .voice-item {
+        padding: 0.75rem 1rem;
+        border: 1px solid var(--border);
+        margin-bottom: 0.5rem;
+        cursor: pointer;
+        transition: all var(--transition);
+      }
+      .voice-item:hover {
+        border-color: var(--foreground);
+        background: var(--gray-2);
+      }
+      .voice-item.active {
+        border-color: var(--foreground);
+        background: var(--gray-4);
+      }
+      .voice-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .voice-cover {
+        width: 3.125rem;
+        height: 3.125rem;
+        border-radius: 2px;
+        object-fit: cover;
+        background: var(--gray-4);
+      }
+      .voice-name {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--foreground);
+      }
+      .voice-tracks {
+        margin-top: 0.5rem;
+        padding-left: 3.875rem;
+      }
+      .voice-track {
+        font-size: 0.8125rem;
+        color: var(--muted-foreground);
+        padding: 0.25rem 0;
+      }
+      .upload-section { flex: 1; min-width: 300px; }
+      .empty-state {
+        text-align: center;
+        padding: 2.5rem 1.25rem;
+        color: var(--muted-foreground);
+        font-size: 0.875rem;
+      }
+      .loading {
+        text-align: center;
+        padding: 1.25rem;
+        color: var(--muted-foreground);
+      }
+      .section-h3 {
+        font-family: var(--font-mono);
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+      }
+    </style>
+  </head>
+
+  <body>
+    <header class="shell-topbar">
+      <a class="brand" href="/"><img src="docs/netease.png" alt="logo">播客上传声音</a>
+      <nav>
+        <a class="shell-btn shell-btn--ghost shell-btn--sm" href="/qrlogin-nocookie.html">登录</a>
+        <a class="shell-btn shell-btn--ghost shell-btn--sm" href="/">返回首页</a>
+      </nav>
+    </header>
+
+    <main class="shell-main">
+      <div class="shell-container shell-narrow" style="max-width:56rem">
+        <header class="shell-header">
+          <h1>播客上传声音</h1>
+          <p class="sub">上传音频到你的播客列表</p>
+        </header>
+
+        <section class="shell-card">
+          <div class="content">
+            <div class="voice-list">
+              <h3 class="section-h3">选择播客列表</h3>
+              <div v-if="loading" class="loading">加载中...</div>
+              <div v-else-if="voicelist.length > 0">
+                <div
+                  v-for="(item, index) in voicelist"
+                  :key="index"
+                  @click="currentVoiceIndex = index"
+                  :class="{ active: currentVoiceIndex === index }"
+                  class="voice-item"
+                >
+                  <div class="voice-header">
+                    <img :src="item.coverUrl" class="voice-cover" alt="cover" />
+                    <span class="voice-name">{{ item.voiceListName }}</span>
+                  </div>
+                  <div class="voice-tracks" v-if="item.voiceListData">
+                    <div
+                      v-for="(item2, index2) in item.voiceListData"
+                      :key="index2"
+                      class="voice-track"
+                    >
+                      {{ item2.voiceName }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="empty-state">暂无播客列表</div>
+            </div>
+
+            <div class="upload-section">
+              <h3 class="section-h3">上传声音</h3>
+              <div class="form-group">
+                <label for="songName">声音名称</label>
+                <input id="songName" v-model="songName" placeholder="请输入声音名称" />
+              </div>
+
+              <div class="form-group">
+                <label for="description">介绍</label>
+                <input id="description" v-model="description" placeholder="请输入介绍" />
+              </div>
+
+              <div class="form-group">
+                <label for="songFile">选择声音文件</label>
+                <input id="songFile" type="file" name="songFile" accept="audio/*" />
+              </div>
+
+              <div class="form-group">
+                <label for="imgFile">选择声音封面（可选）</label>
+                <input id="imgFile" type="file" name="imgFile" accept="image/*" />
+              </div>
+
+              <button class="shell-btn shell-btn--default shell-btn--block" @click="submit">上传</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script src="https://fastly.jsdelivr.net/npm/axios@0.26.1/dist/axios.min.js"></script>
+    <script src="https://fastly.jsdelivr.net/npm/vue@3"></script>
+    <script>
+      Vue.createApp({
+        data() {
+          return {
+            songName: '',
+            description: '',
+            voicelist: [],
+            cookieToken: '',
+            currentVoiceIndex: 0,
+            loading: false,
+          }
+        },
+        created() {
+          this.getData()
+        },
+        computed: {
+          currentVoice() {
+            return this.voicelist[this.currentVoiceIndex]
+          },
+        },
+        methods: {
+          submit() {
+            console.info('submit')
+            const songFile = document.querySelector('input[name=songFile]').files[0]
+            const imgFile = document.querySelector('input[name=imgFile]').files[0]
+            if (!songFile) {
+              alert('请选择声音文件')
+              return
+            }
+            this.upload(songFile, imgFile)
+          },
+
+          async getData() {
+            this.loading = true
+            try {
+              const res = await axios({
+                url: `/voicelist/my/created?limit=100&cookie=${localStorage.getItem(
+                  'cookie',
+                )}`,
+              })
+
+              console.info(res.data.data)
+              this.voicelist = res.data.data.data || []
+              this.voicelist.forEach(async (i) => {
+                try {
+                  const res2 = await axios({
+                    url: `/voicelist/list?voiceListId=${
+                      i.voiceListId
+                    }&limit=5&cookie=${localStorage.getItem('cookie')}`,
+                  })
+                  i.voiceListData = res2.data.data
+                    ? res2.data.data.list || []
+                    : []
+                  console.info(res2)
+                } catch (err) {
+                  console.error('获取播客详情失败:', err)
+                }
+              })
+            } catch (err) {
+              console.error('获取播客列表失败:', err)
+            } finally {
+              this.loading = false
+            }
+          },
+
+          upload(songFile, imgFile) {
+            if (!this.currentVoice) {
+              alert('请先选择播客列表')
+              return
+            }
+
+            var formData = new FormData()
+            formData.append('songFile', songFile)
+            if (imgFile) {
+              formData.append('imgFile', imgFile)
+            }
+
+            axios({
+              method: 'post',
+              url: `/voice/upload?time=${Date.now()}&cookie=${localStorage.getItem(
+                'cookie',
+              )}&songName=${this.songName}&voiceListId=${
+                this.currentVoice.voiceListId
+              }&categoryId=${this.currentVoice.categoryId}&coverImgId=${
+                this.currentVoice.coverImgId
+              }&secondCategoryId=${
+                this.currentVoice.secondCategoryId
+              }&description=${this.description}&privacy=1`,
+              headers: {
+                'Content-Type': 'multipart/form-data',
+              },
+              data: formData,
+            })
+              .then((res) => {
+                alert(`${songFile.name} 上传成功`)
+              })
+              .catch((err) => {
+                console.error('上传失败:', err)
+                alert('上传失败，请重试')
+              })
+          },
+        },
+      }).mount('body')
+    </script>
+  </body>
+</html>

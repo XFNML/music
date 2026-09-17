@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="docs/netease.png">
+<link rel="stylesheet" href="/static/shell.css">
+<title>API 调试界面</title>
+<style>
+    /* ===== 自定义选项区域 ===== */
+    .section-container {
+      margin-top: 1.25rem;
+      padding: 1rem 1.25rem;
+      background: var(--gray-2);
+      border: 1px solid var(--border);
+    }
+    .section-container + .section-container { margin-top: 0.75rem; }
+    .section-title {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--foreground);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .section-title .count-badge {
+      font-size: 0.6875rem;
+      background: var(--gray-4);
+      color: var(--muted-foreground);
+      padding: 0 0.5rem;
+      border-radius: 9999px;
+      font-weight: 400;
+    }
+    .dynamic-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+      align-items: center;
+    }
+    .dynamic-row .key-input {
+      flex: 0 0 14rem;
+      padding: 0.5rem 0.75rem;
+      background: var(--gray-1);
+      border: 1px solid var(--input);
+      color: var(--foreground);
+      font-size: 0.8125rem;
+      font-family: var(--font-mono);
+      outline: none;
+    }
+    .dynamic-row .value-input {
+      flex: 1;
+      padding: 0.5rem 0.75rem;
+      background: var(--gray-1);
+      border: 1px solid var(--input);
+      color: var(--foreground);
+      font-size: 0.8125rem;
+      outline: none;
+    }
+    .dynamic-row .key-input:focus,
+    .dynamic-row .value-input:focus { border-color: var(--ring); }
+    .remove-btn {
+      width: 1.75rem;
+      height: 1.75rem;
+      padding: 0;
+      background: var(--gray-2);
+      color: var(--muted-foreground);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      font-size: 0.875rem;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition);
+      flex-shrink: 0;
+    }
+    .remove-btn:hover {
+      background: var(--destructive);
+      color: var(--gray-1);
+      border-color: var(--destructive);
+    }
+    .add-btn {
+      background: transparent;
+      color: var(--foreground);
+      border: 1px dashed var(--border);
+      padding: 0.375rem 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      cursor: pointer;
+      transition: all var(--transition);
+      margin-top: 0.25rem;
+    }
+    .add-btn:hover {
+      border-color: var(--foreground);
+      background: var(--gray-2);
+    }
+
+    /* ===== 参数编辑区 Tab ===== */
+    .param-container { flex: 1; display: flex; flex-direction: column; }
+    .param-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+    .param-header-title {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--foreground);
+    }
+    .param-tabs {
+      display: flex;
+      gap: 0;
+      background: var(--gray-2);
+      border: 1px solid var(--border);
+      padding: 2px;
+    }
+    .tab-btn {
+      padding: 0.25rem 0.875rem;
+      border: none;
+      background: transparent;
+      color: var(--muted-foreground);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .tab-btn:hover { color: var(--foreground); }
+    .tab-btn.active {
+      background: var(--foreground);
+      color: var(--background);
+    }
+    .param-panel { flex: 1; display: flex; flex-direction: column; }
+    .param-panel textarea { flex: 1; min-height: 21.875rem; }
+
+    /* 双栏响应式 */
+    .data-result { display: flex; gap: 1rem; min-height: 25rem; }
+    .data-result > div { flex: 1; display: flex; flex-direction: column; }
+    .data-result textarea { flex: 1; min-height: 21.875rem; }
+    @media (max-width: 640px) {
+      .data-result { flex-direction: column; }
+      .dynamic-row .key-input { flex: 0 0 8rem; }
+    }
+</style>
+</head>
+<body>
+  <header class="shell-topbar">
+    <a class="brand" href="/"><img src="docs/netease.png" alt="logo">API 调试</a>
+    <nav>
+      <a class="shell-btn shell-btn--ghost shell-btn--sm" href="/">返回首页</a>
+    </nav>
+  </header>
+
+  <main class="shell-main">
+    <div class="shell-container shell-narrow" style="max-width:none">
+      <header class="shell-header">
+        <h1>API 调试界面</h1>
+        <p class="sub">发送任意请求，支持自定义请求头、加密方式与 JSON / 键值对参数</p>
+      </header>
+
+      <section class="shell-card">
+        <form onsubmit="event.preventDefault(); sendRequest();">
+          <div class="shell-flex" style="margin-bottom:0.75rem">
+            <label for="uri" style="flex:0 0 5rem;margin:0">URI</label>
+            <input type="text" id="uri" name="uri" value="/api/song/lyric/v1">
+          </div>
+          <div class="shell-flex" style="margin-bottom:0.75rem">
+            <label for="method" style="flex:0 0 5rem;margin:0">请求方法</label>
+            <select id="method" name="method">
+              <option value="POST" selected>POST</option>
+              <option value="GET">GET</option>
+              <option value="PUT">PUT</option>
+              <option value="DELETE">DELETE</option>
+              <option value="PATCH">PATCH</option>
+            </select>
+          </div>
+          <div class="shell-flex" style="margin-bottom:0.75rem">
+            <label for="crypto" style="flex:0 0 5rem;margin:0">加密方式</label>
+            <select id="crypto" name="crypto">
+              <option value="weapi">weapi</option>
+              <option value="eapi">eapi</option>
+              <option value="api">api</option>
+              <option value="linuxapi">linuxapi</option>
+              <option value="xeapi">xeapi</option>
+              <option value="" selected>(默认)</option>
+            </select>
+          </div>
+          <div class="shell-flex" style="margin-bottom:1rem">
+            <label for="timeout" style="flex:0 0 5rem;margin:0">超时(ms)</label>
+            <input type="number" id="timeout" name="timeout" value="30000" min="0" step="1000" placeholder="0 表示无超时">
+          </div>
+          <div class="shell-flex">
+            <span style="flex:0 0 5rem"></span>
+            <button type="submit" class="shell-btn shell-btn--default">发送请求</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- ===== 自定义请求头 ===== -->
+      <section class="shell-card shell-mt-6">
+        <div class="section-title">
+          请求头 (Headers)
+          <span class="count-badge" id="headerCount">4</span>
+        </div>
+        <div id="headersList"></div>
+        <button class="add-btn" onclick="addHeaderRow('', '')">+ 添加请求头</button>
+      </section>
+
+      <section class="shell-card shell-mt-6">
+        <div class="data-result">
+          <div>
+            <label for="result" style="font-family:var(--font-mono)">响应结果</label>
+            <textarea id="result" name="result" readonly></textarea>
+          </div>
+          <div class="param-container">
+            <div class="param-header">
+              <span class="param-header-title">请求参数</span>
+              <div class="param-tabs">
+                <button class="tab-btn active" data-mode="json" onclick="switchParamTab('json')">JSON</button>
+                <button class="tab-btn" data-mode="kv" onclick="switchParamTab('kv')">键值对</button>
+              </div>
+            </div>
+            <div class="param-panel" id="jsonPanel">
+              <textarea id="data" name="data">
+{
+    "cp": false,
+    "id": "2058263032",
+    "kv": 0,
+    "lv": 0,
+    "rv": 0,
+    "tv": 0,
+    "yrv": 0,
+    "ytv": 0,
+    "yv": 0
+}</textarea>
+            </div>
+            <div class="param-panel" id="kvPanel" style="display:none">
+              <div id="kvList"></div>
+              <button class="add-btn" onclick="addKvRow('', '')">+ 添加参数</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://fastly.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script>
+        // ===== 动态行管理 =====
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function addHeaderRow(key, value) {
+            const list = document.getElementById('headersList');
+            const row = document.createElement('div');
+            row.className = 'dynamic-row';
+            row.innerHTML =
+                '<input type="text" class="key-input" placeholder="Header 名称" value="' +
+                escapeHtml(key) +
+                '">' +
+                '<input type="text" class="value-input" placeholder="值" value="' +
+                escapeHtml(value) +
+                '">' +
+                '<button class="remove-btn" onclick="removeRow(this)" title="删除">✕</button>';
+            list.appendChild(row);
+            updateCount();
+        }
+
+        function addKvRow(key, value) {
+            const list = document.getElementById('kvList');
+            const row = document.createElement('div');
+            row.className = 'dynamic-row';
+            row.innerHTML =
+                '<input type="text" class="key-input" placeholder="参数名" value="' +
+                escapeHtml(key) +
+                '">' +
+                '<input type="text" class="value-input" placeholder="值" value="' +
+                escapeHtml(value) +
+                '">' +
+                '<button class="remove-btn" onclick="removeRow(this)" title="删除">✕</button>';
+            list.appendChild(row);
+        }
+
+        function removeRow(btn) {
+            btn.parentElement.remove();
+        }
+
+        function updateCount() {
+            const count = document.querySelectorAll('#headersList .dynamic-row').length;
+            const badge = document.getElementById('headerCount');
+            if (badge) badge.textContent = count;
+        }
+
+        function collectHeaders() {
+            const headers = {};
+            document.querySelectorAll('#headersList .dynamic-row').forEach(function (row) {
+                var key = row.querySelector('.key-input').value.trim();
+                var value = row.querySelector('.value-input').value;
+                if (key) headers[key] = value;
+            });
+            return headers;
+        }
+
+        function collectKvData() {
+            var obj = {};
+            document.querySelectorAll('#kvList .dynamic-row').forEach(function (row) {
+                var key = row.querySelector('.key-input').value.trim();
+                var val = row.querySelector('.value-input').value;
+                if (!key) return;
+                // 自动类型转换
+                if (val === 'true') obj[key] = true;
+                else if (val === 'false') obj[key] = false;
+                else if (val === 'null') obj[key] = null;
+                else if (/^-?\d+(\.\d+)?$/.test(val) && !isNaN(Number(val))) obj[key] = Number(val);
+                else obj[key] = val;
+            });
+            return obj;
+        }
+
+        // ===== Tab 切换 =====
+        function syncJsonToKv() {
+            try {
+                var data = JSON.parse(document.getElementById('data').value);
+                var list = document.getElementById('kvList');
+                list.innerHTML = '';
+                Object.keys(data).forEach(function (k) {
+                    addKvRow(k, String(data[k]));
+                });
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function syncKvToJson() {
+            var obj = collectKvData();
+            document.getElementById('data').value = JSON.stringify(obj, null, 2);
+        }
+
+        function switchParamTab(mode) {
+            var jsonPanel = document.getElementById('jsonPanel');
+            var kvPanel = document.getElementById('kvPanel');
+
+            if (mode === 'kv') {
+                if (!syncJsonToKv()) {
+                    alert('JSON 格式有误，无法切换到键值对模式，请先修正 JSON');
+                    return;
+                }
+                jsonPanel.style.display = 'none';
+                kvPanel.style.display = 'block';
+            } else {
+                syncKvToJson();
+                kvPanel.style.display = 'none';
+                jsonPanel.style.display = 'block';
+            }
+
+            document.querySelectorAll('.tab-btn').forEach(function (btn) {
+                btn.classList.toggle('active', btn.dataset.mode === mode);
+            });
+        }
+
+        // ===== 默认请求头（直接套用后端预设值）=====
+        var defaultHeaders = [
+            { key: 'Cookie', value: '' },
+            {
+                key: 'User-Agent',
+                value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
+            },
+            { key: 'Referer', value: 'https://music.163.com' },
+            { key: 'Content-Type', value: 'application/json' },
+        ];
+
+        // ===== 发送请求 =====
+        async function sendRequest() {
+            document.getElementById('result').value = '';
+
+            var uri = document.getElementById('uri').value;
+            var method = document.getElementById('method').value;
+            var crypto = document.getElementById('crypto').value;
+            var timeout = parseInt(document.getElementById('timeout').value, 10) || 0;
+            var headers = collectHeaders();
+
+            // 根据当前激活的 tab 读取数据
+            var parsedData;
+            var activeTab = document.querySelector('.tab-btn.active');
+            if (activeTab && activeTab.dataset.mode === 'kv') {
+                parsedData = collectKvData();
+            } else {
+                var rawData = document.getElementById('data').value;
+                try {
+                    parsedData = rawData.trim() ? JSON.parse(rawData) : {};
+                } catch (e) {
+                    document.getElementById('result').value =
+                        '请求数据格式错误：' + e.message;
+                    return;
+                }
+            }
+
+            var axiosConfig = {
+                url: '/api?timestamp=' + Date.now(),
+                method: method,
+            };
+
+            if (timeout > 0) {
+                axiosConfig.timeout = timeout;
+            }
+
+            if (method === 'GET') {
+                axiosConfig.params = {
+                    uri: uri,
+                    crypto: crypto,
+                    data: JSON.stringify(parsedData),
+                    headers: Object.keys(headers).length ? JSON.stringify(headers) : undefined,
+                };
+            } else {
+                axiosConfig.data = {
+                    uri: uri,
+                    crypto: crypto,
+                    data: parsedData,
+                    headers: Object.keys(headers).length ? headers : undefined,
+                };
+            }
+
+            try {
+                var res = await axios(axiosConfig);
+                document.getElementById('result').value = JSON.stringify(
+                    res.data,
+                    null,
+                    2,
+                );
+            } catch (error) {
+                document.getElementById('result').value =
+                    'Request failed: ' + error.message;
+            }
+        }
+
+        // ===== 从 URL 查询参数恢复 =====
+        (function fillFromQuery() {
+            var params = new URLSearchParams(window.location.search);
+            if (!params.toString()) {
+                // 没有查询参数，用默认 header
+                defaultHeaders.forEach(function (h) {
+                    addHeaderRow(h.key, h.value);
+                });
+                return;
+            }
+
+            var uri = params.get('uri');
+            var crypto = params.get('crypto');
+            var dataParam = params.get('data');
+            var method = params.get('method');
+            var timeout = params.get('timeout');
+            var headersParam = params.get('headers');
+            var kvParams = params.get('kvParams');
+            var paramMode = params.get('paramMode');
+
+            if (uri) document.getElementById('uri').value = uri;
+            if (method) {
+                var methodSelect = document.getElementById('method');
+                if (
+                    [].slice.call(methodSelect.options).some(function (opt) {
+                        return opt.value === method;
+                    })
+                ) {
+                    methodSelect.value = method;
+                }
+            }
+            if (timeout) document.getElementById('timeout').value = timeout;
+
+            if (crypto) {
+                var cryptoSelect = document.getElementById('crypto');
+                if (
+                    [].slice.call(cryptoSelect.options).some(function (opt) {
+                        return opt.value === crypto;
+                    })
+                ) {
+                    cryptoSelect.value = crypto;
+                }
+            }
+
+            if (dataParam) {
+                try {
+                    document.getElementById('data').value = JSON.stringify(
+                        JSON.parse(dataParam),
+                        null,
+                        2,
+                    );
+                } catch (_) {
+                    document.getElementById('data').value = dataParam;
+                }
+            }
+
+            if (headersParam) {
+                try {
+                    var parsed = JSON.parse(headersParam);
+                    Object.keys(parsed).forEach(function (k) {
+                        addHeaderRow(k, parsed[k]);
+                    });
+                } catch (_) {
+                    // fallback: 用默认 header
+                    defaultHeaders.forEach(function (h) {
+                        addHeaderRow(h.key, h.value);
+                    });
+                }
+            } else {
+                defaultHeaders.forEach(function (h) {
+                    addHeaderRow(h.key, h.value);
+                });
+            }
+
+            if (kvParams) {
+                try {
+                    var parsed = JSON.parse(kvParams);
+                    // 先填充 kv 列表，再切换到 kv 模式
+                    Object.keys(parsed).forEach(function (k) {
+                        addKvRow(k, String(parsed[k]));
+                    });
+                    if (paramMode === 'kv') {
+                        switchParamTab('kv');
+                    }
+                } catch (_) {
+                    /* ignore */
+                }
+            } else if (paramMode === 'kv' && dataParam) {
+                // 从 data 参数同步到键值对模式
+                try {
+                    var data = JSON.parse(dataParam);
+                    Object.keys(data).forEach(function (k) {
+                        addKvRow(k, String(data[k]));
+                    });
+                    switchParamTab('kv');
+                } catch (_) {
+                    /* ignore */
+                }
+            }
+        })();
+    </script>
+</body>
+</html>
